@@ -1,21 +1,34 @@
 name: Build APK
 on:
   push:
+    branches: [main, master]
   workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.7
-      - run: gradle assembleDebug --no-daemon
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm install
+      - run: npx cap add android
+      - name: Pasang plugin penyimpan ke folder Download
+        run: |
+          cp native/*.java android/app/src/main/java/com/renpy/translator/
+          sed -i 's#<application#<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n    <application#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</application>#<service android:name=".TranslateService" android:exported="false" android:foregroundServiceType="dataSync" />\n    </application>#' android/app/src/main/AndroidManifest.xml
+      - run: npx capacitor-assets generate --android --iconBackgroundColor '#7c4dff' --iconBackgroundColorDark '#15121f'
+      - run: npx cap sync android
+      - name: Keystore tetap dan versionCode naik (supaya bisa update tanpa uninstall)
+        run: |
+          mkdir -p ~/.android
+          cp native/debug.keystore ~/.android/debug.keystore
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          grep -n "versionCode" android/app/build.gradle
+      - run: chmod +x android/gradlew && cd android && ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: PenerjemahGame-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: renpy-translator-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
