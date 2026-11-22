@@ -38,7 +38,7 @@ select{background:var(--in);border:1px solid var(--bd);border-radius:10px;paddin
 <div class="wrap">
 <header>
  <svg width="46" height="46" viewBox="0 0 64 64" aria-label="Ikon aplikasi"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c4dff"/><stop offset="1" stop-color="#ff5c9d"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#g)"/><path d="M14 20h22v5H14zM14 30h14v5H14z" fill="#fff"/><path d="M38 46l8-22 8 22M41 40h10" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="46" r="4" fill="#fff"/></svg>
- <h1>Ren’Py Translator<small>Terjemahkan .rpy &amp; arsip .rpa otomatis</small></h1>
+ <h1>Ren’Py Translator<small>Terjemahkan .rpy, .rpyc &amp; arsip .rpa otomatis</small></h1>
  <button class="icon" id="mbtn" aria-label="Menu">⚙️</button>
  <div class="menu" id="menu">
   <button id="bgBtn">🖼️ Ubah background jadi foto</button>
@@ -49,7 +49,7 @@ select{background:var(--in);border:1px solid var(--bd);border-radius:10px;paddin
 </header>
 <input type="file" id="bgIn" accept="image/*" hidden>
 <div class="card">
- <div class="drop" id="drop">📂 Ketuk atau seret file <b>.rpy</b> / <b>.rpa</b> ke sini</div>
+ <div class="drop" id="drop">📂 Ketuk atau seret file <b>.rpy</b> / <b>.rpyc</b> / <b>.rpa</b> ke sini</div>
  <input type="file" id="fin" multiple hidden>
  <div id="files"></div>
 </div>
@@ -119,15 +119,106 @@ async function readRpa(buf){const u=new Uint8Array(buf);let e=u.indexOf(10);cons
  if(!/^RPA-[23]/.test(h[0]))throw new Error("Bukan arsip RPA 2/3");
  const off=parseInt(h[1],16),key=h[0]==="RPA-3.0"?parseInt(h[2],16):0;
  const ds=new Blob([u.subarray(off)]).stream().pipeThrough(new DecompressionStream("deflate"));
- const idx=unpickle(new Uint8Array(await new Response(ds).arrayBuffer())),out=[],others=[];let skipped=0;
+ const idx=unpickle(new Uint8Array(await new Response(ds).arrayBuffer())),out=[],rpycs=[],others=[];let skipped=0;
  const names=new Set([...idx.keys()]);
- for(const [name,v] of idx){const isRpy=/\.rpy$/i.test(name);
+ for(const [name,v] of idx){const isRpy=/\.rpy$/i.test(name),isRpyc=/\.rpyc$/i.test(name);
   const [o,l,pre]=v[0],s=(o^key)>>>0,n=(l^key)>>>0;let bytes=u.subarray(s,s+n-(pre?pre.length:0));
   if(pre){const pb=Uint8Array.from(pre,c=>c.charCodeAt(0));const t=new Uint8Array(pb.length+bytes.length);t.set(pb);t.set(bytes,pb.length);bytes=t}
   if(isRpy)out.push({name,text:new TextDecoder().decode(bytes)});
-  else if(/\.rpyc$/i.test(name)&&names.has(name.slice(0,-1)))skipped++;
+  else if(isRpyc){if(names.has(name.slice(0,-1)))skipped++;else rpycs.push({name,bytes})}
   else others.push({name,bytes})}
- return {out,others,skipped}}
+ return {out,rpycs,others,skipped}}
+/* ---- RPYC (script compiled) ---- */
+/* unpickler yang membangun objek: kelas Ren'Py jadi {__c:"renpy.ast.Say", ...field} */
+function unpickleObj(b){let p=0;const st=[],mk=[],memo=[],dv=new DataView(b.buffer,b.byteOffset,b.byteLength),U8=new TextDecoder("utf-8"),L1=new TextDecoder("latin1");
+ const top=()=>st[st.length-1],r32=()=>{const v=dv.getUint32(p,true);p+=4;return v};
+ const isO=o=>o&&typeof o==="object"&&!Array.isArray(o)&&!(o instanceof Map)&&("__c" in o);
+ const setI=(t,k,v)=>{if(t instanceof Map)t.set(k,v);else if(isO(t))(t.__m||(t.__m=new Map)).set(k,v)};
+ const addI=(t,v)=>{if(Array.isArray(t))t.push(v);else if(isO(t))(t.__a||(t.__a=[])).push(v)};
+ const big=n=>{let v=0;for(let i=n-1;i>=0;i--)v=v*256+b[p+i];if(n&&(b[p+n-1]&128))v-=Math.pow(256,n);p+=n;return v};
+ const mkO=(c,a)=>({__c:(c&&c.g)||"?",__args:a});
+ const bytesS=n=>{const s=L1.decode(b.subarray(p,p+n));p+=n;return s};
+ const utf=n=>{const s=U8.decode(b.subarray(p,p+n));p+=n;return s};
+ for(;;){const o=b[p++];switch(o){
+ case 0x80:p++;break;case 0x95:p+=8;break;
+ case 40:mk.push(st.length);break;
+ case 46:return st.pop();
+ case 48:st.pop();break;
+ case 49:{const m=mk.pop();st.length=m;break}
+ case 50:st.push(top());break;
+ case 78:st.push(null);break;
+ case 0x88:st.push(true);break;case 0x89:st.push(false);break;
+ case 74:st.push(dv.getInt32(p,true));p+=4;break;
+ case 75:st.push(b[p++]);break;
+ case 77:st.push(dv.getUint16(p,true));p+=2;break;
+ case 0x8a:{const n=b[p++];st.push(big(n));break}
+ case 0x8b:{const n=r32();st.push(big(n));break}
+ case 71:st.push(dv.getFloat64(p,false));p+=8;break;
+ case 88:{const n=r32();st.push(utf(n));break}
+ case 0x8c:{const n=b[p++];st.push(utf(n));break}
+ case 84:{const n=r32();st.push(utf(n));break}
+ case 85:{const n=b[p++];st.push(utf(n));break}
+ case 67:{const n=b[p++];st.push(bytesS(n));break}
+ case 66:{const n=r32();st.push(bytesS(n));break}
+ case 125:st.push(new Map);break;
+ case 93:case 41:case 0x8f:st.push([]);break;
+ case 116:{const m=mk.pop();st.push(st.splice(m));break}
+ case 0x91:{const m=mk.pop();st.push(st.splice(m));break}
+ case 0x85:st.push([st.pop()]);break;
+ case 0x86:{const y=st.pop(),x=st.pop();st.push([x,y]);break}
+ case 0x87:{const z=st.pop(),y=st.pop(),x=st.pop();st.push([x,y,z]);break}
+ case 97:{const v=st.pop();addI(top(),v);break}
+ case 101:case 0x90:{const m=mk.pop(),it=st.splice(m),t=top();it.forEach(v=>addI(t,v));break}
+ case 115:{const v=st.pop(),k=st.pop();setI(top(),k,v);break}
+ case 117:{const m=mk.pop(),it=st.splice(m),t=top();for(let i=0;i<it.length;i+=2)setI(t,it[i],it[i+1]);break}
+ case 99:{const ln=()=>{let t="";while(b[p]!==10)t+=String.fromCharCode(b[p++]);p++;return t};const m=ln(),n=ln();st.push({g:m+"."+n});break}
+ case 0x93:{const n=st.pop(),m=st.pop();st.push({g:m+"."+n});break}
+ case 82:{const a=st.pop(),f=st.pop(),g=(f&&f.g)||"";
+  if(g==="_codecs.encode")st.push(Array.isArray(a)?String(a[0]):"");
+  else if(/_reconstructor$/.test(g))st.push(mkO(Array.isArray(a)?a[0]:null,[]));
+  else if(/PyExpr$/.test(g))st.push(Array.isArray(a)&&typeof a[0]==="string"?a[0]:"");
+  else if(/(^|\.)(set|frozenset)$/.test(g))st.push(Array.isArray(a)&&Array.isArray(a[0])?a[0]:[]);
+  else if(/OrderedDict$/.test(g))st.push(new Map);
+  else st.push(mkO(f,a));break}
+ case 0x81:{const a=st.pop(),c=st.pop(),g=(c&&c.g)||"";
+  st.push(/PyExpr$/.test(g)||/^(__builtin__|builtins)\.(str|unicode)$/.test(g)?(Array.isArray(a)&&typeof a[0]==="string"?a[0]:""):mkO(c,a));break}
+ case 0x92:{st.pop();const a=st.pop(),c=st.pop(),g=(c&&c.g)||"";
+  st.push(/PyExpr$/.test(g)?(Array.isArray(a)&&typeof a[0]==="string"?a[0]:""):mkO(c,a));break}
+ case 98:{const s=st.pop(),ob=top();
+  if(isO(ob)){const mg=m=>{if(m instanceof Map)for(const [k,v] of m)if(typeof k==="string"&&k!=="__c")ob[k]=v};
+   if(s instanceof Map)mg(s);
+   else if(Array.isArray(s)&&s.length===2&&(s[0]===null||s[0] instanceof Map)&&s[1] instanceof Map){mg(s[0]);mg(s[1])}
+   else ob.__s=s}
+  break}
+ case 113:memo[b[p++]]=top();break;
+ case 114:memo[r32()]=top();break;
+ case 104:st.push(memo[b[p++]]);break;
+ case 106:st.push(memo[r32()]);break;
+ case 0x94:memo.push(top());break;
+ default:throw new Error("Opcode pickle tidak didukung: "+o+" @"+(p-1))}}}
+async function inflate(u){return new Uint8Array(await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer())}
+/* ambil teks dialog / menu / _("...") dari satu file .rpyc */
+async function rpycTexts(buf){const u=buf instanceof Uint8Array?buf:new Uint8Array(buf);let data;
+ if(new TextDecoder("latin1").decode(u.subarray(0,10))==="RENPY RPC2"){
+  const dv=new DataView(u.buffer,u.byteOffset,u.byteLength);let p=10,sl=null;
+  while(p+12<=u.length){const s=dv.getUint32(p,true),a=dv.getUint32(p+4,true),l=dv.getUint32(p+8,true);p+=12;if(s===0)break;if(s===1)sl=[a,l]}
+  if(!sl)throw new Error("data script tidak ditemukan");
+  data=await inflate(u.subarray(sl[0],sl[0]+sl[1]))}
+ else data=await inflate(u);
+ const root=unpickleObj(data),out=[],seenT=new Set(),seen=new Set(),stack=[root];
+ const add=s=>{if(typeof s!=="string"||!s.trim()||seenT.has(s))return;if(!/\p{L}/u.test(s.replace(/\{[^}]*\}|\[[^\]]*\]/g,"")))return;seenT.add(s);out.push(s)};
+ while(stack.length){const n=stack.pop();if(!n||typeof n!=="object"||seen.has(n))continue;seen.add(n);let kids;
+  if(Array.isArray(n))kids=n;
+  else if(n instanceof Map)kids=[...n.values()];
+  else{const c=n.__c||"";
+   if(/\.(Say|TranslateSay)$/.test(c))add(n.what);
+   else if(/\.Menu$/.test(c)&&Array.isArray(n.items))n.items.forEach(it=>{if(Array.isArray(it))add(it[0])});
+   else if(/\.PyCode$/.test(c)&&Array.isArray(n.__s)&&typeof n.__s[1]==="string"){const re=/\b_\(\s*(["'])((?:(?!\1)[^\\\n])+)\1\s*\)/g;let m;while((m=re.exec(n.__s[1])))add(m[2])}
+   kids=[];for(const k in n)if(k!=="__c")kids.push(n[k])}
+  for(let i=kids.length-1;i>=0;i--){const k=kids[i];if(k&&typeof k==="object")stack.push(k)}}
+ return out}
+const lit=s=>s.replace(/\\/g,"\\\\").replace(/"/g,'\\"').replace(/\r?\n/g,"\\n");
+const parseRpyc=(name,texts)=>({name,lines:[],rpyc:true,items:texts.map((s,i)=>({i,pre:"",t:lit(s),post:"",tr:""}))});
 /* ---- parsing .rpy ---- */
 const DLG=/^(\s*(?:[A-Za-z_][\w.]*\s+(?:@\s*\w+\s+)?)?)"((?:[^"\\]|\\.)*)"(\s*(?:with\s+\w+\s*)?)$/,MENU=/^(\s*)"((?:[^"\\]|\\.)*)"(\s*(?:if\s.+)?:\s*)$/,UND=/_\("((?:[^"\\]|\\.)*)"\)/;
 const ok=t=>/\p{L}/u.test(t)&&!/\.(png|jpg|webp|ogg|mp3|wav|rpy|ttf|webm)$/i.test(t)&&!/^[\w\/.-]+$/.test(t)||/\s/.test(t)&&/\p{L}/u.test(t);
@@ -138,13 +229,20 @@ function parse(name,text){const lines=text.split(/\r?\n/),items=[];
   else return;
   if(ok(t))items.push({i,pre,t,post,tr:""})});
  return {name,lines,items}}
+const tick=()=>new Promise(r=>setTimeout(r,0));
 async function addFiles(list){msg("Membaca file…");
  for(const f of list){try{
-  if(/\.rpa$/i.test(f.name)){const {out,others:ot,skipped}=await readRpa(await f.arrayBuffer());
+  if(/\.rpa$/i.test(f.name)){const {out,rpycs,others:ot,skipped}=await readRpa(await f.arrayBuffer());
    OTH[f.name]=ot;
    const tlSkip=out.filter(o=>/^tl\//i.test(o.name)).length;out.filter(o=>!/^tl\//i.test(o.name)).forEach(o=>files.push(Object.assign(parse(f.name+"/"+o.name,o.text),{src:f.name,inner:o.name})));
-   msg(`RPA: ${out.length-tlSkip} file .rpy diekstrak.`+(tlSkip?` ${tlSkip} file folder tl/ (terjemahan bawaan) dilewati.`:"")+(skipped?` ${skipped} file .rpyc (duplikat dari .rpy) tidak ikut dibuat ulang.`:""))}
-  else{await new Promise(r=>setTimeout(r,30));const t0=Date.now(),pr=parse(f.name,await f.text());files.push(pr);
+   const rl=rpycs.filter(o=>!/^tl\//i.test(o.name));let rc=0,rt=0,rb=0,re="";
+   for(let i=0;i<rl.length;i++){const r=rl[i];msg(`Membaca .rpyc ${i+1}/${rl.length}…`);await tick();
+    try{const tx=await rpycTexts(r.bytes);if(tx.length){files.push(Object.assign(parseRpyc(f.name+"/"+r.name,tx),{src:f.name,inner:r.name}));rc++;rt+=tx.length}}
+    catch(e){rb++;re=(e&&e.message)||String(e)}}
+   msg(`RPA: ${out.length-tlSkip} file .rpy diekstrak.`+(rl.length?` ${rc} dari ${rl.length} file .rpyc berisi teks (${rt} teks).`+(rb?` ${rb} gagal dibaca [${re}].`:""):"")+(tlSkip?` ${tlSkip} file folder tl/ (terjemahan bawaan) dilewati.`:"")+(skipped?` ${skipped} file .rpyc (duplikat dari .rpy) tidak ikut dibuat ulang.`:"")+(!out.length&&!rpycs.length?` Isi arsip: ${ot.length} file lain, contoh: ${ot.slice(0,3).map(x=>x.name).join(", ")}.`:""))}
+  else if(/\.rpyc$/i.test(f.name)){const tx=await rpycTexts(await f.arrayBuffer()),pr=parseRpyc(f.name,tx);files.push(pr);
+   msg(`${f.name}: ${tx.length} teks ditemukan.`+(tx.length?"":" Tidak ada dialog di file ini."))}
+  else{await tick();const t0=Date.now(),pr=parse(f.name,await f.text());files.push(pr);
    msg(`${f.name}: ${pr.lines.length} baris dibaca, ${pr.items.length} teks ditemukan (${((Date.now()-t0)/1000).toFixed(1)} dtk).`+(pr.items.length?"":" Tidak ada dialog yang cocok: file kosong, hanya berisi terjemahan kosong, atau formatnya tidak umum."))}}catch(e){msg("Gagal membaca "+f.name+": "+e.message)}}
  render()}
 const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
@@ -204,6 +302,12 @@ $("stop").onclick=()=>ctl&&ctl.abort();
 /* ---- gabung & ZIP ---- */
 function merged(f){const by=new Map(f.items.map(x=>[x.i,x]));const o=[`# Digabung oleh Ren'Py Translator: baris asli = komentar (#), terjemahan di bawahnya`];
  f.lines.forEach((ln,i)=>{const x=by.get(i);if(x&&x.tr){o.push("# "+ln.trim(),x.pre+x.tr+x.post)}else o.push(ln)});return o.join("\n")}
+/* .rpyc -> file terjemahan gaya Ren'Py: translate <bahasa> strings (old/new) */
+const LN={id:"indonesian",en:"english",ja:"japanese",ko:"korean","zh-CN":"schinese",es:"spanish",fr:"french",de:"german",ru:"russian",pt:"portuguese"};
+const fixq=s=>s.replace(/\r?\n/g,"\\n").replace(/(?<!\\)"/g,'\\"');
+function mergedTl(f,lang,seen){const o=[`# Dibuat oleh Ren'Py Translator dari ${f.name}`,`translate ${lang} strings:`];let n=0;
+ f.items.forEach(x=>{if(!x.tr||seen.has(x.t))return;seen.add(x.t);o.push("",`    old "${x.t}"`,`    new "${fixq(x.tr)}"`);n++});
+ return n?o.join("\n")+"\n":null}
 const CT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^c>>>1:c>>>1;t[n]=c>>>0}return t})();
 const crc=u=>{let c=~0;for(const b of u)c=CT[(c^b)&255]^c>>>8;return ~c>>>0};
 function zip(ents){const te=new TextEncoder(),parts=[],cd=[];let off=0;
@@ -225,15 +329,22 @@ async function buildRpa(ents){const key=0x1badf00d,chunks=[],idx=[];let pos=34;
  const hd=enc.encode("RPA-3.0 "+pos.toString(16).padStart(16,"0")+" "+key.toString(16).padStart(8,"0")+"\n");
  return new Blob([hd,...chunks,zc])}
 async function saveFile(P,name,folder,blob){await P.saveOpen({filename:name,folder});const u=new Uint8Array(await blob.arrayBuffer());for(let i=0;i<u.length;i+=786432)await P.saveWrite({data:b64u(u.subarray(i,i+786432))});await P.saveClose()}
-$("dl").onclick=async()=>{const outs=[],bySrc=new Map();
+$("dl").onclick=async()=>{const outs=[],bySrc=new Map(),langN=LN[$("lang").value]||"indonesian",seen=new Set();let tlN=0;
  try{msg("Membuat file…");
-  files.forEach(f=>{if(f.src){if(!bySrc.has(f.src))bySrc.set(f.src,[]);bySrc.get(f.src).push(f)}else outs.push({name:f.name.split("/").pop(),blob:new Blob([merged(f)])})});
-  for(const [src,list] of bySrc){const ents=list.filter(f=>f.items.some(x=>x.tr)).map(f=>({name:f.inner,data:merged(f)}));if(ents.length)outs.push({name:src.replace(/\.rpa$/i,"")+"_terjemahan.zip",blob:zip(ents)})}
+  files.forEach(f=>{if(f.src){if(!bySrc.has(f.src))bySrc.set(f.src,[]);bySrc.get(f.src).push(f)}
+   else if(f.rpyc){const c=mergedTl(f,langN,seen);if(c){tlN++;outs.push({name:f.name.replace(/\.rpyc$/i,"")+"_tl.rpy",blob:new Blob([c])})}}
+   else outs.push({name:f.name.split("/").pop(),blob:new Blob([merged(f)])})});
+  for(const [src,list] of bySrc){const ents=[];
+   list.forEach(f=>{if(!f.items.some(x=>x.tr))return;
+    if(f.rpyc){const c=mergedTl(f,langN,seen);if(c){tlN++;ents.push({name:"tl/"+langN+"/"+f.inner.replace(/\.rpyc$/i,"").replace(/[\\/]/g,"_")+"_tl.rpy",data:c})}}
+    else ents.push({name:f.inner,data:merged(f)})});
+   if(ents.some(e=>e.name.startsWith("tl/")))ents.push({name:"zz_bahasa_"+langN+".rpy",data:`# Mengaktifkan bahasa terjemahan sebagai bawaan\ninit python:\n    config.default_language = "${langN}"\n`});
+   if(ents.length)outs.push({name:src.replace(/\.rpa$/i,"")+"_terjemahan.zip",blob:zip(ents)})}
   if(!outs.length)throw new Error("belum ada baris yang diterjemahkan");
   const d=new Date(),p=n=>String(n).padStart(2,"0"),folder="renpy translate/"+`${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`,C=window.Capacitor;
   if(C&&C.isNativePlatform&&C.isNativePlatform()){const P=getP();if(!P)throw new Error("plugin penyimpan tidak ditemukan di APK ini");for(const o of outs){msg("Menyimpan "+o.name+"…");await saveFile(P,o.name,folder,o.blob)}}
   else for(const o of outs){const a=document.createElement("a");a.href=URL.createObjectURL(o.blob);a.download=o.name;a.click()}
-  files=[];render();$("pb").style.width="0";msg("✅ Tersimpan di Download/"+folder+" : "+outs.map(o=>o.name).join(", ")+". Siap mulai dari awal."+(bySrc.size?" Ekstrak ZIP ke folder game/ (gabung/timpa). JANGAN hapus file .rpa asli.":""))}
+  files=[];render();$("pb").style.width="0";msg("✅ Tersimpan di Download/"+folder+" : "+outs.map(o=>o.name).join(", ")+". Siap mulai dari awal."+(bySrc.size?" Ekstrak ZIP ke folder game/ (gabung/timpa). JANGAN hapus file .rpa asli.":"")+(tlN&&!bySrc.size?" Taruh file *_tl.rpy di game/tl/"+langN+"/.":"")+(tlN&&bySrc.size?" Terjemahan dari .rpyc ada di tl/"+langN+"/ dan bahasanya diaktifkan lewat zz_bahasa_"+langN+".rpy.":""))}
  catch(e){msg("Gagal menyimpan: "+(e.message||e)+" (pasang APK terbaru jika pesan menyebut 'not implemented')")}};
 /* ---- input ---- */
 const dr=$("drop");dr.onclick=()=>$("fin").click();$("fin").onchange=e=>{addFiles([...e.target.files]);e.target.value=""};
